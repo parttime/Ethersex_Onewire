@@ -30,6 +30,15 @@
 #include "ds2423.h"
 #include "onewire.h"
 
+typedef struct {
+union{
+	uint32_t raw;
+	uint16_t split[2];
+};	
+
+}   uint32_split;
+
+
 int8_t parse_ow_rom(char *cmd, struct ow_rom_code_t *rom);
 
 int8_t noinline ow_ecmd_parse_ds2423rom_arg(char **cmd, struct ow_rom_code_t *rom){
@@ -82,9 +91,11 @@ int16_t parse_cmd_onewire_ds2423_get_counter(char *cmd, char *output, uint16_t l
 	if(ret != 0)
 		return ECMD_ERR_READ_ERROR;	
 	
-	for(uint8_t i=0;i<8 ; i++)
-	  ecmd_return_len+=snprintf_P(output,  len, PSTR("%hhu "), &rom.bytewise[i]);
-	
+	for(uint8_t i=0;i<8 ; i++){
+	  ret=snprintf_P(output,  len, PSTR("%hhu "), &rom.bytewise[i]);
+	  ecmd_return_len+=ret;
+	  output+=ret;
+	}
 	if (rom.raw == 0)
 		ret = ow_skip_rom();
 	else {
@@ -122,8 +133,11 @@ int16_t parse_cmd_onewire_ds2423_get_counter(char *cmd, char *output, uint16_t l
 		cli();
 		ret=ow_ds2423_get_single_counter(counter,&result);
 		SREG = sreg;
-		if(ret > 0)
-		ecmd_return_len +=snprintf_P(output, len, PSTR("%c: %u"), (unsigned char) ret+65,result );
+		if(ret > 0){
+			ret=snprintf_P(output, len, PSTR("%c: %u"), (unsigned char) ret+65,result );
+			ecmd_return_len+=ret;
+			output+=ret;
+			}
 			else break;
 	};
 	}
@@ -140,9 +154,54 @@ int16_t parse_cmd_onewire_ds2423_hi(char *cmd, char *output, uint16_t len){
   
 }
 
+int16_t parse_cmd_onewire_ds2423_loop(char *cmd, char *output, uint16_t len){
+	uint8_t ecmd_ret_len =0;
+	uint8_t ret =0;
+	uint32_t a;
+	uint32_split c;
+	uint16_t b;
+	debug_printf("len: %u \n",len);
+
+
+	if(sscanf_P(cmd, PSTR("%d %10"PRIu32""), &b,&a) == 1)
+			a=0xFFFFFFFF;
+	debug_printf("%s\n",cmd);
+	
+	for(uint8_t i=0;i<b && i<2;i++){
+		ret=snprintf_P(output,len,PSTR("%u : %10"PRIu32"\n"),b-i,a);
+		debug_printf("%u : %10"PRIu32"\n",b-i,a);
+		output += ret;
+		ecmd_ret_len += ret;
+		a--;
+  	}
+	if(b>2){
+		b-=2;
+		snprintf_P(cmd,len,PSTR("%d %10"PRIu32""),b,a);
+		return ECMD_AGAIN(ecmd_ret_len);
+	};
+	
+	/*
+	for(; b>0; b--){
+		if(b%2)
+			ret=snprintf_P(output,len,PSTR("1"));
+		else
+			ret=snprintf_P(output,len,PSTR("0"));
+	output+=ret;
+	ecmd_ret_len+=ret;
+	};
+*/
+
+
+return  ECMD_FINAL(ecmd_ret_len);
+  
+}
+
+
+
 /*
 	-- Ethersex META --
 	block([[Dallas_1-wire_Bus]])
 	ecmd_feature(onewire_ds2423_get_counter, "1w ds2423 counter", [DEVICE], `get value of given counter')
 	ecmd_feature(onewire_ds2423_hi, "1w ds2423 hi", [DEVICE], `Say hi')
+	ecmd_feature(onewire_ds2423_loop, "1w ds2423 loop", [DEVICE], `loop with ECMD_FINAL(ecmd_ret_len)')
 */
